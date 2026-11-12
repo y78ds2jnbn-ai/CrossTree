@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Baumhöhe">
+<title>Baumhöhe</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#000;color:#fff;font:15px -apple-system,system-ui,sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:manipulation}
+video,canvas{position:fixed;top:0;left:0;width:100%;height:100%}
+video{object-fit:cover}
+canvas{z-index:1;touch-action:none}
+input{-webkit-user-select:text;user-select:text;font:inherit}
+#hud{position:fixed;top:0;left:0;right:0;z-index:2;padding:calc(env(safe-area-inset-top) + 8px) 14px 18px;display:flex;justify-content:space-between;align-items:flex-start;background:linear-gradient(#000b,#0000);font-variant-numeric:tabular-nums;pointer-events:none;text-shadow:0 1px 3px #000}
+#hud b{font-size:24px;font-weight:700}
+#hud .r{text-align:right}
+#warn{position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top) + 64px);z-index:2;background:#ff9500;color:#000;font-weight:600;padding:4px 10px;border-radius:8px;display:none;pointer-events:none}
+#panel{position:fixed;left:0;right:0;bottom:0;z-index:2;padding:8px 12px calc(env(safe-area-inset-bottom) + 10px);background:rgba(0,0,0,.55);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+.row{display:flex;gap:8px;align-items:center;margin:6px 0}
+button{flex:1;appearance:none;-webkit-appearance:none;border:0;border-radius:12px;padding:11px 8px;font-family:inherit;font-weight:600;font-size:15px;background:rgba(255,255,255,.16);color:#fff;line-height:1.2}
+button:active{background:rgba(255,255,255,.32)}
+button small{font-weight:400;font-size:13px;opacity:.85;font-variant-numeric:tabular-nums}
+button.sm{flex:0 0 44px}
+button.pri{background:#0a84ff}
+button.set{background:#30d158;color:#000}
+.dist{flex:1.4;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.1);border-radius:12px;padding:4px 10px}
+.dist input{width:64px;background:none;border:0;color:#fff;font-size:22px;font-weight:700;text-align:right;outline:none}
+.dist span{font-size:13px;opacity:.8}
+#res{flex:1;text-align:center;font-size:30px;font-weight:800;font-variant-numeric:tabular-nums;padding:2px 0}
+.overlay{position:fixed;inset:0;z-index:10;background:rgba(0,0,0,.85);display:none;overflow:auto;padding:calc(env(safe-area-inset-top) + 20px) 20px calc(env(safe-area-inset-bottom) + 20px)}
+.overlay.show{display:block}
+.overlay h2{margin:0 0 12px}
+.overlay p{line-height:1.45;opacity:.9}
+.field{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #fff2;gap:12px}
+.field input[type=number]{width:90px;background:#fff1;border:0;border-radius:8px;color:#fff;padding:8px;text-align:right;font-size:17px}
+.hint{font-size:13px;opacity:.7;margin:4px 0 0}
+#start{display:block;text-align:center;padding-top:calc(env(safe-area-inset-top) + 60px)}
+#start button{max-width:280px;width:100%;font-size:18px;padding:16px;margin-top:20px}
+#start ol{text-align:left;max-width:420px;margin:20px auto;line-height:1.5;opacity:.9}
+#err{color:#ff6961;margin-top:16px}
+#calib{position:fixed;left:0;right:0;top:0;z-index:3;display:none;padding:calc(env(safe-area-inset-top) + 8px) 12px 10px;background:rgba(0,0,0,.7)}
+#calib.show{display:block}
+#calib .field{border:0;padding:4px 0}
+#toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 230px);transform:translateX(-50%);z-index:20;background:#000d;padding:8px 14px;border-radius:10px;font-size:14px;opacity:0;transition:opacity .25s;pointer-events:none;text-align:center;max-width:90%}
+#toast.show{opacity:1}
+.item{padding:10px 0;border-bottom:1px solid #fff2;font-variant-numeric:tabular-nums}
+.item b{font-size:18px}
+.item small{opacity:.7}
+</style>
+</head>
+<body>
+<video id="v" playsinline muted autoplay></video>
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div><b id="hAng">–</b><br><small>Neigung</small></div>
+  <div class="r"><small>Boden am Kreuz</small><br><b id="hGround">–</b></div>
+</div>
+<div id="warn">Handy gerade halten</div>
+
+<div id="calib">
+  <div style="font-size:14px;margin-bottom:6px">Objekt mit bekannter Höhe aus bekannter Distanz anpeilen. Die beiden Linien an Ober- und Unterkante ziehen.</div>
+  <div class="row">
+    <div class="field" style="flex:1">Höhe <input id="calH" type="number" inputmode="decimal" step="0.1"> m</div>
+    <div class="field" style="flex:1">Distanz <input id="calD" type="number" inputmode="decimal" step="0.5"> m</div>
+  </div>
+  <div class="row">
+    <button id="calFreeze">Einfrieren</button>
+    <button id="calOk" class="set">Übernehmen</button>
+    <button id="calCancel">Abbrechen</button>
+  </div>
+</div>
+
+<div id="panel">
+  <div class="row">
+    <button class="sm" id="dMinus">−</button>
+    <div class="dist"><input id="dist" type="number" inputmode="decimal" step="0.5"><span>m<br>Distanz</span></div>
+    <button class="sm" id="dPlus">+</button>
+    <button id="dGround">Distanz<br><small>aus Fuß</small></button>
+  </div>
+  <div class="row">
+    <button id="bBase">Fuß<br><small id="aBase">–</small></button>
+    <button id="bTop">Wipfel<br><small id="aTop">–</small></button>
+  </div>
+  <div class="row"><div id="res">– m</div></div>
+  <div class="row">
+    <button id="bSave" class="pri">Speichern</button>
+    <button id="bList">Liste</button>
+    <button id="bSet" class="sm" style="flex:0 0 56px">⚙︎</button>
+  </div>
+</div>
+
+<div id="start" class="overlay show">
+  <h2>🌲 Baumhöhe</h2>
+  <ol>
+    <li>Distanz zum Baum festlegen: eingeben, mit den <span style="color:#00e5ff">blauen Stadia-Strichen</span> und einer Latte bekannter Höhe, oder über die <span style="color:#ffd400">gelben Bodenlinien</span>.</li>
+    <li>Fadenkreuz auf den Stammfuß → <b>Fuß</b> tippen.</li>
+    <li>Fadenkreuz auf den Wipfel → <b>Wipfel</b> tippen.</li>
+  </ol>
+  <p class="hint">Handy hochkant und gerade halten. Beim ersten Mal unter ⚙︎ den Nullpunkt setzen.</p>
+  <button id="go" class="pri">Start</button>
+  <div id="err"></div>
+</div>
+
+<div id="sheet" class="overlay">
+  <h2>Einstellungen</h2>
+  <div class="field">Augenhöhe (Handy) <span><input id="sEye" type="number" inputmode="decimal" step="0.05"> m</span></div>
+  <div class="field">Latten-/Referenzhöhe <span><input id="sRef" type="number" inputmode="decimal" step="0.1"> m</span></div>
+  <div class="field">Vertikales Sichtfeld <span><input id="sFov" type="number" inputmode="decimal" step="0.5"> °</span></div>
+  <div class="field">GPS beim Speichern <input id="sGps" type="checkbox" style="width:24px;height:24px"></div>
+  <div class="row" style="margin-top:16px"><button id="sZero">Nullpunkt setzen</button></div>
+  <p class="hint">Handy flach mit dem Display nach oben auf eine ebene Fläche legen, dann tippen. Gleicht den Versatz des Neigungssensors aus.</p>
+  <div class="row" style="margin-top:12px"><button id="sCal">Kamera kalibrieren</button></div>
+  <p class="hint">Wird für die Stadia-Striche und Bodenlinien gebraucht. Ohne Kalibrierung gilt ein Schätzwert für die iPhone-Hauptkamera (1×).</p>
+  <div class="row" style="margin-top:20px"><button id="sClose" class="pri">Fertig</button></div>
+  <p class="hint" id="sInfo"></p>
+</div>
+
+<div id="listSheet" class="overlay">
+  <h2>Messungen</h2>
+  <div id="items"></div>
+  <div class="row" style="margin-top:16px"><button id="lCopy">CSV kopieren</button><button id="lClear">Alle löschen</button></div>
+  <div class="row"><button id="lClose" class="pri">Schließen</button></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+const $ = id => document.getElementById(id);
+const video = $('v'), cv = $('c'), ctx = cv.getContext('2d');
+
+// ---------- Zustand ----------
+const DEF = { eyeH: 1.5, refH: 2.0, fNorm: 0.78, betaOff: 0, gammaOff: 0, gps: false, dist: 20 };
+let S = Object.assign({}, DEF), LIST = [];
+try {
+  Object.assign(S, JSON.parse(localStorage.getItem('bh_settings') || '{}'));
+  LIST = JSON.parse(localStorage.getItem('bh_list') || '[]');
+} catch (e) {}
+function persist() {
+  try { localStorage.setItem('bh_settings', JSON.stringify(S)); localStorage.setItem('bh_list', JSON.stringify(LIST)); } catch (e) {}
+}
+
+let elev = null, roll = 0, samples = [], lastBeta = null, lastGamma = null;
+let aBase = null, aTop = null;
+let calib = null; // {y1, y2, drag}
+let hits = [];
+
+// ---------- Hilfen ----------
+const fmtDeg = r => (r >= 0 ? '+' : '') + (r * R2D).toFixed(1) + '°';
+let toastT;
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2200);
+}
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+
+// ---------- Sensor ----------
+function onOri(e) {
+  if (e.beta == null) return;
+  lastBeta = e.beta; lastGamma = e.gamma;
+  const b = (e.beta - S.betaOff) * D2R, g = (e.gamma - S.gammaOff) * D2R;
+  // Kamera schaut entlang -z des Geräts; Höhenwinkel = asin(-cosβ·cosγ)
+  const el = Math.asin(clamp(-Math.cos(b) * Math.cos(g), -1, 1));
+  roll = g;
+  const now = performance.now();
+  samples.push([now, el]);
+  while (samples.length && now - samples[0][0] > 600) samples.shift();
+  elev = elev == null ? el : elev + 0.25 * (el - elev);
+}
+function captureAngle() {
+  if (!samples.length) return null;
+  const now = performance.now();
+  let s = samples.filter(x => now - x[0] <= 400);
+  if (!s.length) s = samples;
+  return s.reduce((a, x) => a + x[1], 0) / s.length;
+}
+
+// ---------- Geometrie ----------
+let W = 0, H = 0, dpr = 1;
+function resize() {
+  dpr = window.devicePixelRatio || 1; W = innerWidth; H = innerHeight;
+  cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', resize); resize();
+function vScale() {
+  return (video.videoWidth && video.videoHeight) ? Math.max(W / video.videoWidth, H / video.videoHeight) : null;
+}
+function fpx() { // Brennweite in CSS-Pixel am Bildschirm
+  const s = vScale(); return s ? S.fNorm * video.videoHeight * s : null;
+}
+function yForElev(theta) { // Weltwinkel -> Bildschirm-y
+  const f = fpx(); if (f == null || elev == null) return null;
+  const d = theta - elev; if (Math.abs(d) > 1.3) return null;
+  return H / 2 - f * Math.tan(d);
+}
+function groundDist() {
+  if (elev == null || elev > -0.5 * D2R) return null;
+  return S.eyeH / Math.tan(-elev);
+}
+
+// ---------- Zeichnen ----------
+function text(t, x, y, color, align = 'left', size = 13) {
+  ctx.font = `600 ${size}px -apple-system,system-ui,sans-serif`;
+  ctx.textAlign = align; ctx.textBaseline = 'middle';
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.8)'; ctx.strokeText(t, x, y);
+  ctx.fillStyle = color; ctx.fillText(t, x, y);
+}
+function line(x1, y1, x2, y2, color, w = 1.5, dash = null) {
+  ctx.save();
+  ctx.setLineDash(dash || []);
+  ctx.lineWidth = w + 2; ctx.strokeStyle = 'rgba(0,0,0,.5)';
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.lineWidth = w; ctx.strokeStyle = color;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const cx = W / 2, cy = H / 2, f = fpx();
+  hits = [];
+
+  if (calib) {
+    for (const k of ['y1', 'y2']) {
+      line(0, calib[k], W, calib[k], '#30d158', 2);
+      ctx.fillStyle = '#30d158'; ctx.beginPath(); ctx.arc(W - 36, calib[k], 14, 0, 7); ctx.fill();
+    }
+    text(Math.abs(calib.y2 - calib.y1).toFixed(0) + ' px', 14, (calib.y1 + calib.y2) / 2, '#30d158');
+  } else if (f && elev != null) {
+    // Horizont
+    const yh = yForElev(0);
+    if (yh != null && yh > 0 && yh < H) { line(0, yh, W, yh, 'rgba(255,255,255,.45)', 1, [2, 6]); text('Horizont', W - 10, yh - 10, 'rgba(255,255,255,.7)', 'right', 11); }
+
+    // Bodenlinien (nur ebenes Gelände)
+    for (const d of [5, 10, 15, 20, 25, 30, 40]) {
+      const y = yForElev(-Math.atan(S.eyeH / d));
+      if (y == null || y < 70 || y > H - 40) continue;
+      line(0, y, W, y, '#ffd400', 1.5, [10, 6]);
+      text(d + ' m', 10, y - 10, '#ffd400');
+    }
+
+    // Stadia-Striche: Referenzlatte S.refH, Basis am Fadenkreuz
+    const dists = [10, 15, 20, 25, 30];
+    dists.forEach((d, i) => {
+      const p = f * S.refH / d;
+      const x = cx + 46 + i * 30;
+      const sel = Math.abs(S.dist - d) < 0.01;
+      const col = sel ? '#30d158' : '#00e5ff';
+      line(x, cy, x, cy - p, col, sel ? 3 : 2);
+      line(x - 6, cy - p, x + 6, cy - p, col, 2);
+      text(String(d), x, cy + 14, col, 'center', 12);
+      hits.push({ x1: x - 14, x2: x + 14, y1: cy - p - 14, y2: cy + 26, d });
+    });
+    line(cx + 34, cy, cx + 46 + (dists.length - 1) * 30 + 8, cy, '#00e5ff', 1.5);
+    text(S.refH.toFixed(1) + ' m Latte', cx + 46 + (dists.length - 1) * 30 + 12, cy - 10, '#00e5ff', 'left', 11);
+  }
+
+  // Fadenkreuz
+  if (!calib) {
+    const c = '#ff3b30';
+    line(cx - 30, cy, cx - 6, cy, c, 2); line(cx + 6, cy, cx + 30, cy, c, 2);
+    line(cx, cy - 30, cx, cy - 6, c, 2); line(cx, cy + 6, cx, cy + 30, c, 2);
+    ctx.fillStyle = c; ctx.beginPath(); ctx.arc(cx, cy, 2, 0, 7); ctx.fill();
+  }
+
+  // HUD
+  if (elev != null) {
+    $('hAng').textContent = fmtDeg(elev);
+    const g = groundDist();
+    $('hGround').textContent = g != null && g < 200 ? g.toFixed(1) + ' m' : '–';
+    $('warn').style.display = Math.abs(roll) > 6 * D2R && !calib ? 'block' : 'none';
+  }
+  requestAnimationFrame(draw);
+}
+
+// ---------- Messung ----------
+function syncDist() { $('dist').value = (+S.dist).toFixed(1); }
+function update() {
+  $('aBase').textContent = aBase == null ? '–' : fmtDeg(aBase);
+  $('aTop').textContent = aTop == null ? '–' : fmtDeg(aTop);
+  if (aBase != null && aTop != null && S.dist > 0) {
+    const h = S.dist * (Math.tan(aTop) - Math.tan(aBase));
+    $('res').textContent = h.toFixed(1) + ' m';
+  } else $('res').textContent = '– m';
+}
+function currentHeight() {
+  return (aBase != null && aTop != null) ? S.dist * (Math.tan(aTop) - Math.tan(aBase)) : null;
+}
+function setDist(d) { S.dist = Math.max(0.5, Math.round(d * 10) / 10); syncDist(); persist(); update(); }
+
+$('dist').addEventListener('change', e => { const v = parseFloat(String(e.target.value).replace(',', '.')); if (v > 0) setDist(v); else syncDist(); });
+$('dMinus').onclick = () => setDist(S.dist - 0.5);
+$('dPlus').onclick = () => setDist(S.dist + 0.5);
+$('dGround').onclick = () => {
+  const a = captureAngle();
+  if (a == null || a > -0.5 * D2R) { toast('Fadenkreuz auf den Stammfuß richten (unter den Horizont)'); return; }
+  setDist(S.eyeH / Math.tan(-a)); aBase = a; update();
+  toast('Distanz ' + S.dist.toFixed(1) + ' m + Fußwinkel übernommen (nur in der Ebene genau)');
+};
+$('bBase').onclick = () => { const a = captureAngle(); if (a == null) return toast('Kein Sensorsignal'); aBase = a; update(); };
+$('bTop').onclick = () => { const a = captureAngle(); if (a == null) return toast('Kein Sensorsignal'); aTop = a; update(); };
+
+cv.addEventListener('pointerdown', e => {
+  if (calib) {
+    const k = Math.abs(e.clientY - calib.y1) < Math.abs(e.clientY - calib.y2) ? 'y1' : 'y2';
+    calib.drag = k; calib[k] = e.clientY; return;
+  }
+  for (const h of hits) {
+    if (e.clientX >= h.x1 && e.clientX <= h.x2 && e.clientY >= h.y1 && e.clientY <= h.y2) {
+      setDist(h.d); toast('Distanz ' + h.d + ' m (Stadia)'); return;
+    }
+  }
+});
+cv.addEventListener('pointermove', e => { if (calib && calib.drag) calib[calib.drag] = clamp(e.clientY, 0, H); });
+addEventListener('pointerup', () => { if (calib) calib.drag = null; });
+
+// ---------- Speichern / Liste ----------
+function addEntry(pos) {
+  const h = currentHeight();
+  LIST.unshift({
+    t: new Date().toISOString(), h: +h.toFixed(2), d: S.dist,
+    base: +(aBase * R2D).toFixed(2), top: +(aTop * R2D).toFixed(2),
+    lat: pos ? +pos.coords.latitude.toFixed(6) : null, lon: pos ? +pos.coords.longitude.toFixed(6) : null,
+    acc: pos ? Math.round(pos.coords.accuracy) : null
+  });
+  persist(); toast('Gespeichert: ' + h.toFixed(1) + ' m' + (pos ? ' (mit GPS)' : ''));
+  aBase = aTop = null; update();
+}
+$('bSave').onclick = () => {
+  if (currentHeight() == null) return toast('Erst Fuß und Wipfel messen');
+  if (S.gps && navigator.geolocation) {
+    toast('GPS …');
+    navigator.geolocation.getCurrentPosition(p => addEntry(p), () => addEntry(null), { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 });
+  } else addEntry(null);
+};
+function renderList() {
+  $('items').innerHTML = LIST.length ? LIST.map(m => {
+    const d = new Date(m.t);
+    return `<div class="item"><b>${m.h.toFixed(1)} m</b> &nbsp;<small>Distanz ${m.d} m · ${m.base}° / ${m.top}°</small><br>
+      <small>${d.toLocaleDateString('de-AT')} ${d.toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' })}${m.lat != null ? ` · ${m.lat}, ${m.lon} (±${m.acc} m)` : ''}</small></div>`;
+  }).join('') : '<p>Noch keine Messungen.</p>';
+}
+$('bList').onclick = () => { renderList(); $('listSheet').classList.add('show'); };
+$('lClose').onclick = () => $('listSheet').classList.remove('show');
+$('lClear').onclick = () => {
+  if ($('lClear').dataset.arm) { LIST = []; persist(); renderList(); delete $('lClear').dataset.arm; $('lClear').textContent = 'Alle löschen'; }
+  else { $('lClear').dataset.arm = 1; $('lClear').textContent = 'Wirklich löschen?'; setTimeout(() => { delete $('lClear').dataset.arm; $('lClear').textContent = 'Alle löschen'; }, 3000); }
+};
+$('lCopy').onclick = async () => {
+  const csv = 'zeit;hoehe_m;distanz_m;winkel_fuss;winkel_wipfel;lat;lon;gps_genauigkeit_m\n' +
+    LIST.map(m => [m.t, m.h, m.d, m.base, m.top, m.lat ?? '', m.lon ?? '', m.acc ?? ''].join(';')).join('\n');
+  try { await navigator.clipboard.writeText(csv); toast('CSV in der Zwischenablage'); }
+  catch (e) { toast('Kopieren nicht möglich'); }
+};
+
+// ---------- Einstellungen ----------
+const fovFromF = fn => 2 * Math.atan(0.5 / fn) * R2D;
+function openSheet() {
+  $('sEye').value = S.eyeH; $('sRef').value = S.refH; $('sFov').value = fovFromF(S.fNorm).toFixed(1); $('sGps').checked = !!S.gps;
+  $('sInfo').textContent = video.videoWidth ? `Kamera: ${video.videoWidth}×${video.videoHeight}` : '';
+  $('sheet').classList.add('show');
+}
+$('bSet').onclick = openSheet;
+$('sClose').onclick = () => {
+  const n = id => parseFloat(String($(id).value).replace(',', '.'));
+  if (n('sEye') > 0) S.eyeH = n('sEye');
+  if (n('sRef') > 0) S.refH = n('sRef');
+  const fov = n('sFov'); if (fov > 10 && fov < 150) S.fNorm = 0.5 / Math.tan(fov / 2 * D2R);
+  S.gps = $('sGps').checked;
+  persist(); $('sheet').classList.remove('show');
+};
+$('sZero').onclick = () => {
+  if (lastBeta == null) return toast('Kein Sensorsignal');
+  if (Math.abs(lastBeta) > 10 || Math.abs(lastGamma) > 10) return toast('Handy liegt nicht flach (β ' + lastBeta.toFixed(1) + '°, γ ' + lastGamma.toFixed(1) + '°)');
+  S.betaOff = lastBeta; S.gammaOff = lastGamma; persist();
+  toast('Nullpunkt gesetzt (β ' + lastBeta.toFixed(2) + '°, γ ' + lastGamma.toFixed(2) + '°)');
+};
+$('sCal').onclick = () => {
+  $('sheet').classList.remove('show');
+  calib = { y1: H / 2 - 120, y2: H / 2 + 120, drag: null };
+  $('calH').value = S.refH; $('calD').value = 10;
+  $('calib').classList.add('show'); $('panel').style.display = 'none'; $('hud').style.display = 'none';
+};
+function endCalib() {
+  calib = null; video.play(); $('calFreeze').textContent = 'Einfrieren';
+  $('calib').classList.remove('show'); $('panel').style.display = ''; $('hud').style.display = '';
+}
+$('calFreeze').onclick = () => {
+  if (video.paused) { video.play(); $('calFreeze').textContent = 'Einfrieren'; }
+  else { video.pause(); $('calFreeze').textContent = 'Weiter'; }
+};
+$('calCancel').onclick = endCalib;
+$('calOk').onclick = () => {
+  const h = parseFloat(String($('calH').value).replace(',', '.')), d = parseFloat(String($('calD').value).replace(',', '.'));
+  const p = Math.abs(calib.y2 - calib.y1), s = vScale();
+  if (!(h > 0 && d > 0) || p < 10 || !s) return toast('Werte prüfen');
+  const f = p * d / h;                 // Brennweite in CSS-px (Objekt mittig)
+  S.fNorm = f / (s * video.videoHeight);
+  persist(); endCalib();
+  toast('Kalibriert: Sichtfeld ' + fovFromF(S.fNorm).toFixed(1) + '°');
+};
+
+// ---------- Start ----------
+$('go').onclick = async () => {
+  const err = $('err'); err.textContent = '';
+  if (!window.isSecureContext) { err.textContent = 'Die Seite muss über HTTPS laufen, sonst gibt es keinen Zugriff auf Kamera und Sensor.'; return; }
+  try {
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      const r = await DeviceOrientationEvent.requestPermission();
+      if (r !== 'granted') { err.textContent = 'Zugriff auf den Bewegungssensor wurde abgelehnt. Safari neu laden und erlauben.'; return; }
+    }
+    addEventListener('deviceorientation', onOri);
+  } catch (e) { err.textContent = 'Sensor: ' + e.message; return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
+    });
+    video.srcObject = stream; await video.play();
+  } catch (e) { err.textContent = 'Kamera: ' + e.message; return; }
+  $('start').classList.remove('show');
+  setTimeout(() => { if (lastBeta == null) toast('Kein Sensorsignal. Bewegungssensor in Safari erlaubt?'); }, 1500);
+};
+
+syncDist(); update(); requestAnimationFrame(draw);
+</script>
+</body>
+</html>
